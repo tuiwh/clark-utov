@@ -1,0 +1,45 @@
+name: Sync upstream
+
+# 每天 02:17 UTC 强制镜像上游(main = upstream/main + 本 workflow),也支持手动触发
+on:
+  schedule:
+    - cron: '17 2 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout fork
+        uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Configure git
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Force-sync to upstream (mirror)
+        run: |
+          # 1) 先备份 workflow 自身,防止被 reset --hard 清掉(否则任务跑一次就自删)
+          cp .github/workflows/sync.yml /tmp/sync.yml
+
+          # 2) 强制对齐到上游
+          git remote add upstream https://github.com/clarkluoluo/clark-utov.git
+          git fetch upstream
+          git reset --hard upstream/main
+
+          # 3) 恢复 workflow 文件,让定时任务能持续运行
+          mkdir -p .github/workflows
+          cp /tmp/sync.yml .github/workflows/sync.yml
+          git add .github/workflows/sync.yml
+          git diff --cached --quiet || git commit -m "ci: keep self-sync workflow"
+
+          # 4) 强制推送
+          git push --force origin main
+          echo "✅ 已强制镜像上游:main = upstream/main + 本 workflow"
